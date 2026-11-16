@@ -4,7 +4,7 @@ const mineflayer = require('mineflayer');
 
 // Configuration with sensible defaults and environment overrides
 const CONFIG = {
-  host: process.env.MC_HOST || process.env.SERVER_IP || 'mcnp.network',
+  host: process.env.MC_HOST || process.env.SERVER_IP || 'play.mcnp.network',
   port: parseInt(process.env.MC_PORT || process.env.SERVER_PORT, 10) || 25565,
   username: process.env.MC_USERNAME || '_QuickPuller',
   loginPassword: process.env.MC_PASSWORD || 'tynorix',
@@ -39,6 +39,16 @@ let pullCount = 0;
 let lastPullTimestamp = 0;
 let botState = 'STARTING';
 let inSurvival = false;
+let lastError = null;
+let lastKickReason = null;
+const recentLogs = [];
+
+function logMsg(msg) {
+  const line = `[${new Date().toISOString().substring(11, 19)}] ${msg}`;
+  console.log(line);
+  recentLogs.push(line);
+  if (recentLogs.length > 20) recentLogs.shift();
+}
 
 // 1. Lightweight Web Server for Fly.io / Railway Healthchecks & Monitoring
 function handleHealthRequest(req, res) {
@@ -50,8 +60,11 @@ function handleHealthRequest(req, res) {
     inSurvival: inSurvival,
     botUsername: CONFIG.username,
     targetServer: `${CONFIG.host}:${CONFIG.port}`,
+    lastError: lastError,
+    lastKickReason: lastKickReason,
     pullsExecuted: pullCount,
     uptimeSeconds: Math.floor(process.uptime()),
+    recentLogs: recentLogs,
     timestamp: new Date().toISOString()
   };
   res.end(JSON.stringify(statusInfo, null, 2));
@@ -370,19 +383,21 @@ function createBot() {
   // Disconnection and Error Handling with infinite auto-reconnect
   bot.on('kicked', (reason) => {
     botState = 'KICKED';
-    console.warn(`[Bot] Kicked from server. Reason: ${reason}`);
+    lastKickReason = typeof reason === 'object' ? JSON.stringify(reason) : String(reason);
+    logMsg(`Kicked from server: ${lastKickReason}`);
     triggerReconnect();
   });
 
   bot.on('error', (err) => {
     botState = 'ERROR';
-    console.error(`[Bot] Connection error: ${err.message}`);
+    lastError = err.message || String(err);
+    logMsg(`Connection error: ${lastError}`);
     triggerReconnect();
   });
 
   bot.on('end', () => {
     botState = 'DISCONNECTED';
-    console.warn('[Bot] Disconnected from server.');
+    logMsg('Disconnected from server.');
     triggerReconnect();
   });
 }

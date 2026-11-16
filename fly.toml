@@ -10,7 +10,7 @@ primary_region = 'sin'
 
 [env]
   PORT = "8080"
-  MC_HOST = "mcnp.network"
+  MC_HOST = "play.mcnp.network"
   MC_PORT = "25565"
   MC_USERNAME = "_QuickPuller"
   MC_PASSWORD = "tynorix"
