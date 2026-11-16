@@ -1,0 +1,22 @@
+{
+  "name": "mcnp-puller",
+  "version": "1.0.0",
+  "description": "Minecraft bot for MCNP that auto-logs in, navigates the lobby GUI to Survival, and triggers left/right click combos on chat 'Pull'",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "keywords": [
+    "mineflayer",
+    "minecraft",
+    "bot",
+    "mcnp",
+    "railway"
+  ],
+  "author": "AsbinPaneru79",
+  "license": "ISC",
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "mineflayer": "^4.20.1"
+  }
+}
