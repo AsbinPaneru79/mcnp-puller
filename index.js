@@ -75,8 +75,8 @@ try {
 // 2. Action: 1x Left-Click, 2x Right-Click Quickly
 async function executePullCombo(sender) {
   const now = Date.now();
-  // Prevent duplicate trigger within 800ms
-  if (now - lastPullTimestamp < 800) {
+  // Prevent duplicate trigger within 500ms
+  if (now - lastPullTimestamp < 500) {
     console.log(`[Pull Action] Debounced rapid trigger from ${sender} (${now - lastPullTimestamp}ms since last)`);
     return;
   }
@@ -103,27 +103,55 @@ async function executePullCombo(sender) {
 
     // --- STEP 1: Left Click Once ---
     console.log('[Combo 1/3] Left Click (Arm Swing / Attack)...');
-    bot.swingArm('right');
+    if (typeof bot.swingArm === 'function') {
+      bot.swingArm('right');
+    }
+    if (bot._client) {
+      try { bot._client.write('arm_animation', { hand: 0 }); } catch (e) {}
+    }
+
     if (bot.entityAtCursor) {
-      const targetEntity = bot.entityAtCursor(3.5);
-      if (targetEntity) {
-        console.log(`[Combo 1/3] Hit entity in crosshair: ${targetEntity.username || targetEntity.name || targetEntity.type}`);
-        bot.attack(targetEntity);
-      }
+      try {
+        const targetEntity = bot.entityAtCursor(3.5);
+        if (targetEntity) {
+          console.log(`[Combo 1/3] Hit entity in crosshair: ${targetEntity.username || targetEntity.name || targetEntity.type}`);
+          bot.attack(targetEntity);
+        }
+      } catch (e) {}
     }
 
     await delay(CONFIG.clickDelayMs);
 
     // --- STEP 2: Right Click #1 ---
     console.log('[Combo 2/3] Right Click #1 (Activate Item)...');
-    bot.activateItem(false);
+    if (typeof bot.activateItem === 'function') {
+      bot.activateItem(false);
+    }
+    if (bot._client) {
+      try { bot._client.write('use_item', { hand: 0 }); } catch (e) {}
+    }
 
     await delay(CONFIG.clickDelayMs);
 
     // --- STEP 3: Right Click #2 ---
     console.log('[Combo 3/3] Right Click #2 (Activate Item)...');
-    bot.deactivateItem();
-    bot.activateItem(false);
+    if (typeof bot.deactivateItem === 'function') {
+      try { bot.deactivateItem(); } catch (e) {}
+    }
+    await delay(30);
+    if (typeof bot.activateItem === 'function') {
+      bot.activateItem(false);
+    }
+    if (bot._client) {
+      try { bot._client.write('use_item', { hand: 0 }); } catch (e) {}
+    }
+
+    // Post-combo release
+    setTimeout(() => {
+      if (typeof bot.deactivateItem === 'function') {
+        try { bot.deactivateItem(); } catch (e) {}
+      }
+    }, 150);
 
     console.log(`[Pull Action #${pullCount}] Combo executed successfully!\n`);
   } catch (err) {
@@ -132,27 +160,57 @@ async function executePullCombo(sender) {
     // Release lock after short safety buffer
     setTimeout(() => {
       isPulling = false;
-    }, 400);
+    }, 300);
   }
 }
 
-// 3. Helper to detect if a chat string matches ONLY "Pull" (case-insensitive)
-function isExactPullMessage(msg) {
-  if (!msg || typeof msg !== 'string') return false;
-  const clean = msg.trim();
-  
-  // Exact match for "Pull" or "pull" or "PULL"
-  if (/^"?pull"?$/i.test(clean)) return true;
+// 3. Helper to strip Minecraft color/format codes (§a, §f, &a, etc.)
+function stripMinecraftFormatting(text) {
+  if (!text || typeof text !== 'string') return '';
+  return text
+    .replace(/§[0-9a-fk-or]/gi, '')
+    .replace(/&[0-9a-fk-or]/gi, '')
+    .replace(/\u00a7[0-9a-fk-or]/gi, '')
+    .trim();
+}
 
-  // Handles standard server formats like:
-  // "Player: Pull", "[Rank] Player: Pull", "Player » Pull", "<Player> Pull"
-  const delimiterMatch = clean.match(/(?:[:»>]|\bchat\b)\s*"?pull"?$/i);
+// 4. Helper to detect if a chat string contains strictly "Pull"
+function checkPullTrigger(rawText, botUsername) {
+  const clean = stripMinecraftFormatting(rawText);
+  if (!clean) return false;
+
+  // Exact match for "Pull", "pull", '"Pull"', "Pull!", "pull."
+  if (/^["']?pull["']?[!.?]?$/i.test(clean)) {
+    return true;
+  }
+
+  // Exclude system broadcasts/alerts
+  if (/^(?:\[server\]|\[broadcast\]|\[announcement\]|\[alert\]|\[tip\]|\[info\])/i.test(clean)) {
+    return false;
+  }
+
+  // Matches chat lines ending with Pull after delimiters:
+  // e.g. "Player: Pull", "[Rank] Player » Pull", "Player > Pull", "Player -> You: Pull"
+  const delimiterMatch = clean.match(/(?:[:»>➔›\-]\s*|\b(?:says?|whispers?|chat)\b\s*|\]\s*)["']?pull["']?[!.?]?$/i);
   if (delimiterMatch) {
-    // Ensure the message does not come from automated system announcements
-    const isSystemAnnouncement = /^(?:\[server\]|\[broadcast\]|\[announcement\]|\[alert\]|\[tip\])/i.test(clean);
-    if (!isSystemAnnouncement) {
-      return true;
+    // Ensure the message was not sent by the bot itself
+    const authorMatch = clean.match(/^([a-zA-Z0-9_]{3,16})\s*[:»>➔›]/);
+    if (authorMatch && authorMatch[1].toLowerCase() === botUsername.toLowerCase()) {
+      return false;
     }
+    return true;
+  }
+
+  // Angle bracket sender format: "<Player> Pull"
+  const angleMatch = clean.match(/<([a-zA-Z0-9_]{3,16})>\s*["']?pull["']?[!.?]?$/i);
+  if (angleMatch) {
+    if (angleMatch[1].toLowerCase() === botUsername.toLowerCase()) return false;
+    return true;
+  }
+
+  // Whisper / direct message formats: "[from Player] Pull" or "[Player -> me] Pull"
+  if (/^\[(?:from|msg|whisper)\s+[^\]]+\]\s*["']?pull["']?[!.?]?$/i.test(clean)) {
+    return true;
   }
 
   return false;
@@ -197,20 +255,19 @@ function createBot() {
       bot.chat(`/login ${CONFIG.loginPassword}`);
     }
 
-    // 2. Chat trigger check on raw message (catches custom Spigot/Paper formatted chat)
-    if (isExactPullMessage(rawText)) {
-      // Don't trigger from bot's own messages
-      if (!rawText.toLowerCase().includes(CONFIG.username.toLowerCase())) {
-        executePullCombo('Chat-Parser');
-      }
+    // 2. Chat trigger check for "Pull"
+    if (checkPullTrigger(rawText, CONFIG.username)) {
+      console.log(`[Trigger Match] Detected 'Pull' in message: "${rawText}"`);
+      executePullCombo('Chat-Message');
     }
   });
 
   // Standard Mineflayer chat event (catches vanilla formatted chat)
   bot.on('chat', (sender, message) => {
-    if (sender === CONFIG.username) return;
-    if (isExactPullMessage(message)) {
-      executePullCombo(sender);
+    if (sender && sender.toLowerCase() === CONFIG.username.toLowerCase()) return;
+    if (checkPullTrigger(message, CONFIG.username)) {
+      console.log(`[Trigger Match] Detected 'Pull' from sender '${sender}': "${message}"`);
+      executePullCombo(`Player: ${sender}`);
     }
   });
 
