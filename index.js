@@ -26,8 +26,8 @@ const CONFIG = {
   // Auto-reconnect delay
   reconnectDelayMs: parseInt(process.env.RECONNECT_DELAY_MS, 10) || 10000,
   
-  // HTTP Health check port for Railway / Docker
-  webPort: process.env.PORT || 3000
+  // HTTP Health check port (defaults to 8080 for Fly.io, or 3000 for Railway/local)
+  webPort: parseInt(process.env.PORT, 10) || 8080
 };
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -40,8 +40,8 @@ let lastPullTimestamp = 0;
 let botState = 'STARTING';
 let inSurvival = false;
 
-// 1. Lightweight Web Server for Railway Healthchecks & Monitoring
-const server = http.createServer((req, res) => {
+// 1. Lightweight Web Server for Fly.io / Railway Healthchecks & Monitoring
+function handleHealthRequest(req, res) {
   res.writeHead(200, { 'Content-Type': 'application/json' });
   const statusInfo = {
     app: 'MCNP-Puller',
@@ -55,11 +55,22 @@ const server = http.createServer((req, res) => {
     timestamp: new Date().toISOString()
   };
   res.end(JSON.stringify(statusInfo, null, 2));
-});
+}
 
+const server = http.createServer(handleHealthRequest);
 server.listen(CONFIG.webPort, '0.0.0.0', () => {
   console.log(`[Web Server] HTTP health-check listening on 0.0.0.0:${CONFIG.webPort}`);
 });
+
+// Dual-port listening: If primary port is 8080, also listen on 3000 (or vice versa)
+const secondaryPort = CONFIG.webPort === 8080 ? 3000 : 8080;
+try {
+  const secondaryServer = http.createServer(handleHealthRequest);
+  secondaryServer.listen(secondaryPort, '0.0.0.0', () => {
+    console.log(`[Web Server] Secondary listener active on 0.0.0.0:${secondaryPort}`);
+  });
+  secondaryServer.on('error', () => {});
+} catch (e) {}
 
 // 2. Action: 1x Left-Click, 2x Right-Click Quickly
 async function executePullCombo(sender) {

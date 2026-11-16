@@ -1,4 +1,4 @@
-# fly.toml app configuration file generated for mcnp-puller on 2026-11-16T10:57:24Z
+# fly.toml app configuration file generated for mcnp-puller
 #
 # See https://docs.fly.io/reference/configuration for information about how to use this file.
 #
@@ -7,16 +7,23 @@ app = 'mcnp-puller'
 primary_region = 'sin'
 
 [build]
+
+[env]
+  PORT = "8080"
+  MC_HOST = "mcnp.network"
+  MC_PORT = "25565"
+  MC_USERNAME = "_QuickPuller"
+  MC_PASSWORD = "tynorix"
+
 [http_service]
   internal_port = 8080
   force_https = true
-  auto_stop_machines = 'stop'
-  auto_start_machines = true
-  min_machines_running = 0
+  auto_stop_machines = 'off'
+  auto_start_machines = false
+  min_machines_running = 1
   processes = ['app']
 
 [[vm]]
-  memory = '1gb'
+  memory = '512mb'
   cpu_kind = 'shared'
   cpus = 1
-  memory_mb = 256
